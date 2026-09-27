@@ -1,126 +1,105 @@
 import "./styles.css";
-
-const project = {
-  "sourceNo": 9,
-  "id": "hxyfront-62007",
-  "port": 62007,
-  "title": "植物标本馆入库",
-  "domain": "植物标本馆",
-  "prompt": "开发一个植物标本馆压制标本入库前端项目，工作人员可以录入采集号、物种名称、采集地点、海拔、生境描述、采集人、压制状态、鉴定状态和馆藏位置。页面需要有入库队列、鉴定状态筛选、采集地点信息卡、馆藏柜位记录和单份标本详情页。",
-  "palette": [
-    "#166534",
-    "#0f766e",
-    "#ca8a04"
-  ],
-  "metrics": [
-    "入库队列",
-    "待鉴定",
-    "已上柜",
-    "采集点"
-  ],
-  "filters": [
-    "待压制",
-    "待鉴定",
-    "已入库",
-    "需补照"
-  ],
-  "fields": [
-    "采集号",
-    "物种名称",
-    "采集地点",
-    "海拔",
-    "生境描述",
-    "馆藏位置"
-  ],
-  "records": [
-    [
-      "HX-240615-01",
-      "槭属待定",
-      "海拔1420m",
-      "待鉴定"
-    ],
-    [
-      "HX-240615-08",
-      "蕨类",
-      "阴湿沟谷",
-      "已压制"
-    ],
-    [
-      "HX-240616-03",
-      "菊科",
-      "柜位B-12-04",
-      "已入库"
-    ]
-  ]
-};
+import { useMemo } from "react";
+import { useLedger } from "./state/useLedger";
+import { usePageState } from "./state/usePageState";
+import { clearDatabase, exportDatabase } from "./storage/localStorage";
+import { ToastHost } from "./components/ToastHost";
+import { Metrics } from "./components/Metrics";
+import { RulesPanel } from "./components/RulesPanel";
+import { NewRecordPanel } from "./components/NewRecordPanel";
+import { IntakeQueue } from "./components/IntakeQueue";
+import { MergeWorkbench } from "./components/MergeWorkbench";
+import { PendingProposals } from "./components/PendingProposals";
+import { MergeGroups } from "./components/MergeGroups";
+import { LocationCards } from "./components/LocationCards";
+import { LedgerLog } from "./components/LedgerLog";
+import { SpecimenDetail } from "./components/SpecimenDetail";
+import { GroupDetail } from "./components/GroupDetail";
 
 function App() {
+  const ledger = useLedger();
+  const page = usePageState();
+  const { db } = ledger;
+
+  const metrics = useMemo(() => {
+    const shelved = new Set(
+      db.specimens.filter((s) => s.shelfPosition.trim()).map((s) => s.id)
+    ).size;
+    return [
+      { label: "标本份数", value: db.specimens.length, hint: "每份独立档号" },
+      { label: "待鉴定", value: db.specimens.filter((s) => s.identifyStatus === "待鉴定").length, hint: "含同号多份" },
+      { label: "已上柜", value: shelved, hint: "柜位记录跟原标本" },
+      { label: "现有合组", value: db.groups.length, hint: "主档展示详情" },
+      { label: "待确认", value: db.proposals.length, hint: "地点/日期差异核对" },
+    ];
+  }, [db]);
+
+  const onPickLocation = (location: string) => {
+    page.setKeyword(location);
+    page.goHome();
+  };
+
   return (
     <main className="app">
       <section className="hero">
-        <p>{project.id} · 源提示词{project.sourceNo} · Port {project.port}</p>
-        <h1>{project.title}</h1>
-        <span>{project.prompt}</span>
-      </section>
-
-      <section className="metrics">
-        {project.metrics.map((metric: string, index: number) => (
-          <article key={metric}>
-            <small>{metric}</small>
-            <strong>{[86, 14, 7, 32][index] ?? 12}</strong>
-          </article>
-        ))}
-      </section>
-
-      <section className="workspace">
-        <aside className="panel">
-          <h2>{project.domain}筛选</h2>
-          <div className="chips">
-            {project.filters.map((item: string) => (
-              <button key={item}>{item}</button>
-            ))}
-          </div>
-        </aside>
-
-        <section className="panel form-panel">
-          <div className="heading">
-            <div>
-              <p>专业字段</p>
-              <h2>新增记录</h2>
-            </div>
-            <button className="primary">保存草稿</button>
-          </div>
-          <div className="field-grid">
-            {project.fields.map((field: string) => (
-              <label key={field}>
-                <span>{field}</span>
-                <input placeholder={"填写" + field} />
-              </label>
-            ))}
-          </div>
-        </section>
-      </section>
-
-      <section className="panel">
-        <div className="heading">
-          <div>
-            <p>历史记录</p>
-            <h2>近期工作台</h2>
-          </div>
-          <button>导出摘要</button>
-        </div>
-        <div className="records">
-          {project.records.map((record: string[], index: number) => (
-            <article key={record.join("-")}>
-              <b>{String(index + 1).padStart(2, "0")}</b>
-              <div>
-                <h3>{record[0]}</h3>
-                <p>{record.slice(1).join(" · ")}</p>
-              </div>
-            </article>
-          ))}
+        <p>hxyfront-62007 · 植物标本馆 · 数据仅存本机浏览器</p>
+        <h1>采集号分合台账</h1>
+        <span>
+          几份标本共用一个采集号时，按物种、采集地和日期核对后再合并：合并保留各自档号并指定主档展示详情；
+          日期或地点不同停在待确认逐条说明；拆开后各份恢复独立，柜位与历史注记跟随原标本，已上柜记录不因合并消失。
+        </span>
+        <div className="hero-actions">
+          <button onClick={() => exportDatabase(db)}>导出本机数据 (JSON)</button>
+          <button onClick={() => { ledger.resetToDemo(); page.goHome(); page.pushToast("已恢复演示数据"); }}>
+            重置为演示数据
+          </button>
+          <button
+            className="danger-btn"
+            onClick={() => {
+              if (window.confirm("确定清空本机全部标本与分合记录？此操作不可撤销。")) {
+                ledger.clearAll();
+                clearDatabase();
+                page.goHome();
+                page.pushToast("本机数据已清空", "warn");
+              }
+            }}
+          >
+            清空本机数据
+          </button>
         </div>
       </section>
+
+      <Metrics metrics={metrics} />
+
+      {page.view.kind === "specimen" ? (
+        <SpecimenDetail specimenId={page.view.id} ledger={ledger} page={page} />
+      ) : page.view.kind === "group" ? (
+        <GroupDetail groupId={page.view.id} ledger={ledger} page={page} />
+      ) : (
+        <>
+          <div className="workspace">
+            <RulesPanel />
+            <NewRecordPanel ledger={ledger} page={page} />
+          </div>
+
+          <PendingProposals db={db} ledger={ledger} page={page} />
+
+          <IntakeQueue db={db} page={page} />
+
+          <MergeGroups db={db} page={page} />
+
+          <LocationCards db={db} onPick={onPickLocation} />
+
+          <LedgerLog db={db} />
+        </>
+      )}
+
+      <footer className="app-footer">
+        整理规则 · 资料存取 · 页面状态三层分离 ｜ 数据仅写入本机 localStorage，重开页面分合记录仍在
+      </footer>
+
+      {page.showMergePanel && <MergeWorkbench ledger={ledger} page={page} />}
+      <ToastHost toasts={page.toasts} />
     </main>
   );
 }
